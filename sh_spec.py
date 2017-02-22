@@ -393,7 +393,7 @@ class NonzeroAssertion(object):
 
 PIPE = subprocess.PIPE
 
-def RunCases(cases, shells, case_predicate, verbose):
+def RunCases(cases, shells, case_predicate, out):
   #pprint.pprint(cases)
 
   sys.stdout.write(_BOLD)
@@ -479,14 +479,7 @@ def RunCases(cases, shells, case_predicate, verbose):
     PrintResultRow(result_row)
     print(desc)  # repr(code)[:30]
 
-    if verbose:
-      for shell, stdout, stderr, messages in debug_info:
-        for m in messages:
-          print(m)
-        print('%s stdout:' % shell)
-        print(stdout)
-        print('%s stderr:' % shell)
-        print(stderr)
+    out.PrintVerbose(debug_info)
 
   print(
       '%d passed, %d ok, %d known unimplemented, %d known bugs, '
@@ -532,6 +525,33 @@ class RegexPredicate(object):
     return bool(self.desc_re.search(case['desc']))
 
 
+class ColorOutput(object):
+
+  def __init__(self, f, verbose):
+    self.f = f
+    self.verbose = verbose
+
+  def PrintVerbose(self, debug_info):
+    if not self.verbose:
+      return
+
+    for shell, stdout, stderr, messages in debug_info:
+      for m in messages:
+        print(m, file=self.f)
+      print('%s stdout:' % shell, file=self.f)
+      print(stdout, file=self.f)
+      print('%s stderr:' % shell, file=self.f)
+      print(stderr, file=self.f)
+
+
+class AnsiOutput(ColorOutput):
+  pass
+
+
+class HtmlOutput(ColorOutput):
+  pass
+
+
 def Options():
   """Returns an option parser instance."""
   p = optparse.OptionParser('test_sh.py [options] TEST_FILE shell...')
@@ -548,6 +568,9 @@ def Options():
   p.add_option(
       '--list', dest='do_list', action='store_true', default=None,
       help='Just list tests')
+  p.add_option(
+      '--format', dest='format', choices=['ansi', 'html'], default='ansi',
+      help="Output format (default 'ansi')")
 
   return p
 
@@ -585,13 +608,21 @@ def main(argv):
   else:
     case_predicate = lambda i, case: True
 
+  # NOTE: Also see asdl/format.py
+  if opts.format == 'ansi':
+    out = AnsiOutput(sys.stdout, opts.verbose)
+  elif opts.format == 'html':
+    out = HtmlOutput(sys.stdout, opts.verbose)
+  else:
+    raise AssertionError
+
   shell_pairs = []
   for path in shells:
     name, _ = os.path.splitext(path)
     label = os.path.basename(name)
     shell_pairs.append((label, path))
 
-  success = RunCases(cases, shell_pairs, case_predicate, opts.verbose)
+  success = RunCases(cases, shell_pairs, case_predicate, out)
   if not success:
     sys.exit(1)
 
